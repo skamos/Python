@@ -77,10 +77,10 @@ def img_process(imgs, bndbox = None, resolution: int = 200, equalize: bool = Fal
         imgs_out.append(img)
     return np.array(imgs_out)
 
-model = load_model('Models/model.h5')
-labels = np.load('Models/labels.npy')
+model = load_model('model.h5')
+labels = np.load('labels.npy')
 
-path = 'Data/test.jpg'
+path = input('Le chemin de la photo : ')
 img = cv.cvtColor(cv.imread(path), cv.COLOR_BGR2RGB)
 img = tf.keras.applications.xception.preprocess_input(img_process(imgs=[img], resolution=299))
 
