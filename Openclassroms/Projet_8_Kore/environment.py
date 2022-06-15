@@ -166,43 +166,114 @@ class KoreGymEnv(gym.Env):
             The corresponding kore environment actions or None if the agent wants to wait.
 
         """
-        action_launch = gym_action[0] > 0
-        action_build = gym_action[0] < 0
-        # Mapping the number of ships is an interesting exercise. Here we chose a linear mapping to the interval
-        # [1, MAX_ACTION_FLEET_SIZE], but you could use something else. With a linear mapping, all values are
-        # evenly spaced. An exponential mapping, however, would space out lower values, making them easier for the agent
-        # to distinguish and choose, at the cost of needing more precision to accurately select higher values.
+        action_type = gym_action[0]
         number_of_ships = int(
             clip_normalize(
-                x=abs(gym_action[0]),
-                low_in=0,
+                x=gym_action[1],
+                low_in=-1,
                 high_in=1,
                 low_out=1,
                 high_out=MAX_ACTION_FLEET_SIZE
             )
         )
+        action_dir = int(
+            clip_normalize(
+                x=gym_action[2],
+                low_in=-1,
+                high_in=1,
+                low_out=0,
+                high_out=3
+            )
+        )
+        action_lenth_x = int(
+            clip_normalize(
+                x=gym_action[3],
+                low_in=-1,
+                high_in=1,
+                low_out=1,
+                high_out=9
+            )
+        )
+        action_lenth_y = int(
+            clip_normalize(
+                x=gym_action[4],
+                low_in=-1,
+                high_in=1,
+                low_out=1,
+                high_out=9
+            )
+        )
+        action_build_x = int(
+            clip_normalize(
+                x=gym_action[4],
+                low_in=-1,
+                high_in=1,
+                low_out=1,
+                high_out=11
+            )
+        )
+        action_build_y = int(
+            clip_normalize(
+                x=gym_action[4],
+                low_in=-1,
+                high_in=1,
+                low_out=-11,
+                high_out=11
+            )
+        )
+        # Mapping the number of ships is an interesting exercise. Here we chose a linear mapping to the interval
+        # [1, MAX_ACTION_FLEET_SIZE], but you could use something else. With a linear mapping, all values are
+        # evenly spaced. An exponential mapping, however, would space out lower values, making them easier for the agent
+        # to distinguish and choose, at the cost of needing more precision to accurately select higher values.
 
         # Broadcast the same action to all shipyards
         board = self.board
         me = board.current_player
+        
         for shipyard in me.shipyards:
             action = None
-            if action_build:
+            if action_type < -0.5: # build ships
                 # Limit the number of ships to the maximum that can be actually built
                 max_spawn = shipyard.max_spawn
                 max_purchasable = floor(me.kore / self.config["spawnCost"])
                 number_of_ships = min(number_of_ships, max_spawn, max_purchasable)
                 if number_of_ships:
                     action = ShipyardAction.spawn_ships(number_ships=number_of_ships)
-
-            elif action_launch:
+            elif action_type < 0: # lauch linear
                 # Limit the number of ships to the amount that is actually present in the shipyard
                 shipyard_count = shipyard.ship_count
                 number_of_ships = min(number_of_ships, shipyard_count)
                 if number_of_ships:
-                    direction = round((gym_action[1] + 1) * 1.5)  # int between 0 (North) and 3 (West)
-                    action = ShipyardAction.launch_fleet_in_direction(number_ships=number_of_ships,
-                                                                      direction=Direction.from_index(direction))
+                    flight_plan = Direction.from_index(action_dir).to_char()  # int between 0 (North) and 3 (West)
+                    action = ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
+            elif action_type < 0.5: # lauch circular
+                # Limit the number of ships to the amount that is actually present in the shipyard
+                shipyard_count = shipyard.ship_count
+                number_of_ships = min(number_of_ships, shipyard_count)
+                if number_of_ships >= 21:
+                    flight_plan = ""
+                    for i in range(4):
+                        flight_plan += Direction.from_index((action_dir + i) % 4).to_char()
+                        if i % 2 == 0:
+                            flight_plan += str(action_lenth_y)
+                        elif not i == 3:
+                            flight_plan += str(action_lenth_x)
+                    action = ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
+            else: # lauch built
+                # Limit the number of ships to the amount that is actually present in the shipyard
+                shipyard_count = shipyard.ship_count
+                number_of_ships = min(number_of_ships, shipyard_count)
+                if number_of_ships >= 50:
+                    flight_plan = Direction.from_index(action_dir).to_char()
+                    flight_plan += str(action_build_x)
+                    if action_build_y < 0:
+                        flight_plan += Direction.from_index((action_dir + 1) % 4).to_char()
+                        flight_plan += str(abs(action_build_y))
+                    elif action_build_y > 0:
+                        flight_plan += Direction.from_index((action_dir + 3) % 4).to_char()
+                        flight_plan += str(action_build_y)
+                    flight_plan += "C"
+                    action = ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
             shipyard.next_action = action
 
         return me.next_actions

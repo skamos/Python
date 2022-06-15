@@ -12,12 +12,12 @@ GAME_CONFIG = {
 }
 
 # Define your opponent. We'll use the starter bot in the notebook environment for this baseline.
-OPPONENT = 'opponent.py'
+OPPONENT = 'opponent/main.py'
 GAME_AGENTS = [None, OPPONENT]
 
 # Define our parameters
 N_FEATURES = 4
-ACTION_SIZE = (2,)
+ACTION_SIZE = (5,)
 DTYPE = np.float64
 MAX_OBSERVABLE_KORE = 500
 MAX_OBSERVABLE_SHIPS = 200
