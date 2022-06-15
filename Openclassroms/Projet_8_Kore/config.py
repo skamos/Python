@@ -1,3 +1,4 @@
+# %%writefile config.py
 import numpy as np
 from kaggle_environments import make
 

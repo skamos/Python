@@ -1,4 +1,4 @@
-
+# %%writefile "opponent/defence.py"
 import random
 
 # <--->

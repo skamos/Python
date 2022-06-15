@@ -1,3 +1,4 @@
+# %%writefile environment.py
 import gym
 import numpy as np
 from gym import spaces

@@ -1,3 +1,4 @@
+# %%writefile "opponent/geometry.py"
 import numpy as np
 from typing import Tuple, List, Generator
 

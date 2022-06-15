@@ -1,3 +1,4 @@
+# %%writefile "opponent/main.py"
 # <--->
 from board import Board
 from offence import capture_shipyards

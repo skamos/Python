@@ -1,3 +1,4 @@
+# %%writefile main.py
 # All this syspath wranglig is needed to make sure that the agent runs on the target environment and can load both the external dependencies
 # and the saved model. Dear kaggle, if possible, please make this easier!
 import os

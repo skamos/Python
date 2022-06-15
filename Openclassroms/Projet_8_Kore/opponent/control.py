@@ -1,4 +1,4 @@
-
+# %%writefile "opponent/control.py"
 import random
 
 # <--->

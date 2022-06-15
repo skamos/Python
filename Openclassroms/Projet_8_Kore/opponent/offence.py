@@ -1,3 +1,4 @@
+# %%writefile "opponent/offence.py"
 import random
 
 import numpy as np

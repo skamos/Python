@@ -1,3 +1,4 @@
+# %%writefile "opponent/basic.py"
 import math
 from typing import Union
 

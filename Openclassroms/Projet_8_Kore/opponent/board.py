@@ -1,3 +1,4 @@
+# %%writefile "opponent/board.py"
 import itertools
 import numpy as np
 from typing import Dict, List, Union, Optional, Generator

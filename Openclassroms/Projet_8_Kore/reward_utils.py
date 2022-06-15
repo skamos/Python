@@ -1,3 +1,4 @@
+# %%writefile reward_utils.py
 from config import GAME_CONFIG, SHIP_COST, SHIPYARD_COST
 from kaggle_environments.envs.kore_fleets.helpers import Board
 import numpy as np
