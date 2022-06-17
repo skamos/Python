@@ -1,3 +1,4 @@
+# chargement des librairies
 import cv2 as cv
 import numpy as np
 import math
@@ -5,6 +6,7 @@ from typing import Optional
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 
+# définition des fonction de preprocessing
 def equalize_img(img: np.ndarray) -> np.ndarray:
     img_YUV = cv.cvtColor(img, cv.COLOR_BGR2YUV)
     img_YUV[:,:,0] = cv.equalizeHist(img_YUV[:,:,0])
@@ -77,12 +79,16 @@ def img_process(imgs, bndbox = None, resolution: int = 200, equalize: bool = Fal
         imgs_out.append(img)
     return np.array(imgs_out)
 
+# chargement du modèle
 model = load_model('model.h5')
 labels = np.load('labels.npy')
 
+
 path = input('Le chemin de la photo : ')
+# calcule de prédiction
 img = cv.cvtColor(cv.imread(path), cv.COLOR_BGR2RGB)
 img = tf.keras.applications.xception.preprocess_input(img_process(imgs=[img], resolution=299))
-
 pred : np.ndarray = model.predict(img)
+
+# retour de prédiction
 print('\nc\'est : '+labels[pred.argmax()]+'\navec une certitude de ' + str(pred.max()))

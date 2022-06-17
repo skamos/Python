@@ -51,7 +51,6 @@ class KoreGymEnv(gym.Env):
             agents = GAME_AGENTS
         if not debug:
             debug = True
-
         self.agents = agents
         self.env = make("kore_fleets", configuration=config, debug=debug)
         self.config = self.env.configuration
@@ -117,6 +116,7 @@ class KoreGymEnv(gym.Env):
         self.reward = self.compute_reward(done)
 
         # Debugging info
+        # print(kore_action)
         # with open('logs/tmp.log', 'a') as log:
         #    print(kore_action.action_type, kore_action.num_ships, kore_action.flight_plan, file=log)
         #    if done:
