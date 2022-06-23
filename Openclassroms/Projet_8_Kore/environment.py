@@ -4,8 +4,8 @@ import numpy as np
 from gym import spaces
 from math import floor
 from kaggle_environments import make
-from kaggle_environments.envs.kore_fleets.helpers import ShipyardAction, Board, Direction
-from typing import Union, Tuple, Dict
+import kaggle_environments.envs.kore_fleets.helpers as kr
+from typing import Union, Tuple, Optional, Dict
 from reward_utils import get_board_value
 from config import (
     N_FEATURES,
@@ -85,6 +85,10 @@ class KoreGymEnv(gym.Env):
         self.n_dones = 0
         self.last_action = None
         self.last_done = False
+        
+        self.shipyard_id: Optional[kr.ShipyardId] = None
+        self.shipyards: list[kr.ShipyardId] = []
+        self.kore_action = {}
 
     def reset(self) -> np.ndarray:
         """Resets the trainer and returns the initial observation in state space.
@@ -95,6 +99,10 @@ class KoreGymEnv(gym.Env):
         # agents = self.agents if np.random.rand() > .5 else self.agents[::-1]  # Randomize starting position
         self.trainer = self.env.train(self.agents)
         self.raw_obs = self.trainer.reset()
+        board: kr.Board = self.board
+        self.shipyards = board.current_player.shipyard_ids
+        self.kore_action = {}
+        self.shipyard_id = self.shipyards.pop()
         self.n_resets += 1
         return self.obs_as_gym_state
 
@@ -110,25 +118,41 @@ class KoreGymEnv(gym.Env):
             done: If True, the episode is over
             info: A dictionary with additional debugging information
         """
-        kore_action = self.gym_to_kore_action(action)
-        self.previous_obs = self.raw_obs
-        self.raw_obs, _, done, info = self.trainer.step(kore_action)  # Ignore trainer reward, which is just delta kore
-        self.reward = self.compute_reward(done)
+        done = False
+        info = {}
+        shipyard_action = self.gym_to_kore_action(action)
+        self.kore_action.update(shipyard_action)
+        if self.shipyards == []:
+            self.previous_obs = self.raw_obs
+            self.raw_obs, _, done, info = self.trainer.step(self.kore_action)  # Ignore trainer reward, which is just delta kore
+            self.reward = self.compute_reward(done)
+            # print(self.kore_action)
+            # print(str(self.board.step) + 'tour de jeu')
 
-        # Debugging info
-        # print(kore_action)
-        # with open('logs/tmp.log', 'a') as log:
-        #    print(kore_action.action_type, kore_action.num_ships, kore_action.flight_plan, file=log)
-        #    if done:
-        #        print('done', file=log)
-        #    if info:
-        #        print('info', file=log)
-        self.n_steps += 1
-        self.last_done = done
-        self.last_action = kore_action
-        self.n_dones += 1 if done else 0
-
-        return self.obs_as_gym_state, self.reward, done, info
+            # Debugging info
+            # print(self.kore_action)
+            # with open('logs/tmp.log', 'a') as log:
+            #    print(self.kore_action.action_type, self.kore_action.num_ships, self.kore_action.flight_plan, file=log)
+            #    if done:
+            #        print('done', file=log)
+            #    if info:
+            #        print('info', file=log)
+            self.n_steps += 1
+            self.last_done = done
+            self.last_action = self.kore_action
+            self.kore_action = {}
+            self.n_dones += 1 if done else 0
+            self.shipyards = self.board.current_player.shipyard_ids
+            # print(self.shipyards)
+            # print(self.board.step)
+            if len(self.shipyards) > 0:
+                self.shipyard_id = self.shipyards.pop()
+            else:
+                self.shipyard_id = None
+        else:
+            self.shipyard_id = self.shipyards.pop()
+        
+        return self.obs_as_gym_state, self.reward, done, info  # type: ignore
 
     def render(self, **kwargs):
         self.env.render(**kwargs)
@@ -138,11 +162,11 @@ class KoreGymEnv(gym.Env):
 
     @property
     def board(self):
-        return Board(self.raw_obs, self.config)
+        return kr.Board(self.raw_obs, self.config)
 
     @property
     def previous_board(self):
-        return Board(self.previous_obs, self.config)
+        return kr.Board(self.previous_obs, self.config)
 
     def gym_to_kore_action(self, gym_action: np.ndarray) -> Dict[str, str]:
         """Decode an action in action space as a kore action.
@@ -228,55 +252,56 @@ class KoreGymEnv(gym.Env):
         # to distinguish and choose, at the cost of needing more precision to accurately select higher values.
 
         # Broadcast the same action to all shipyards
-        board = self.board
-        me = board.current_player
-        
-        for shipyard in me.shipyards:
-            action = None
-            if action_type < -0.5: # build ships
-                # Limit the number of ships to the maximum that can be actually built
-                max_spawn = shipyard.max_spawn
-                max_purchasable = floor(me.kore / self.config["spawnCost"])
-                number_of_ships = min(number_of_ships, max_spawn, max_purchasable)
-                if number_of_ships:
-                    action = ShipyardAction.spawn_ships(number_ships=number_of_ships)
-            elif action_type < 0: # lauch linear
-                # Limit the number of ships to the amount that is actually present in the shipyard
-                shipyard_count = shipyard.ship_count
-                number_of_ships = min(number_of_ships, shipyard_count)
-                if number_of_ships:
-                    flight_plan = Direction.from_index(action_dir).to_char()  # int between 0 (North) and 3 (West)
-                    action = ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
-            elif action_type < 0.5: # lauch circular
-                # Limit the number of ships to the amount that is actually present in the shipyard
-                shipyard_count = shipyard.ship_count
-                number_of_ships = min(number_of_ships, shipyard_count)
-                if number_of_ships >= 21:
-                    flight_plan = ""
-                    for i in range(4):
-                        flight_plan += Direction.from_index((action_dir + i) % 4).to_char()
-                        if i % 2 == 0:
-                            flight_plan += str(action_lenth_y)
-                        elif not i == 3:
-                            flight_plan += str(action_lenth_x)
-                    action = ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
-            else: # lauch built
-                # Limit the number of ships to the amount that is actually present in the shipyard
-                shipyard_count = shipyard.ship_count
-                number_of_ships = min(number_of_ships, shipyard_count)
-                if number_of_ships >= 50:
-                    flight_plan = Direction.from_index(action_dir).to_char()
-                    flight_plan += str(action_build_x)
-                    if action_build_y < 0:
-                        flight_plan += Direction.from_index((action_dir + 1) % 4).to_char()
-                        flight_plan += str(abs(action_build_y))
-                    elif action_build_y > 0:
-                        flight_plan += Direction.from_index((action_dir + 3) % 4).to_char()
-                        flight_plan += str(action_build_y)
-                    flight_plan += "C"
-                    action = ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
-            shipyard.next_action = action
-
+        # print(str(self.board.step) + 'tour de SY', self.shipyard_id)
+        board: kr.Board = self.board
+        me: kr.Player = board.current_player
+        action = None
+        if self.shipyard_id == None:
+            return {}
+        shipyard: kr.Shipyard = board.shipyards[self.shipyard_id]  # type: ignore
+        if action_type < -0.5: # build ships
+            # Limit the number of ships to the maximum that can be actually built
+            max_spawn = shipyard.max_spawn
+            max_purchasable = floor(me.kore / self.config["spawnCost"])
+            number_of_ships = min(number_of_ships, max_spawn, max_purchasable)
+            if number_of_ships:
+                action = kr.ShipyardAction.spawn_ships(number_ships=number_of_ships)
+        elif action_type < 0: # lauch linear
+            # Limit the number of ships to the amount that is actually present in the shipyard
+            shipyard_count = shipyard.ship_count
+            number_of_ships = min(number_of_ships, shipyard_count)
+            if number_of_ships:
+                flight_plan = kr.Direction.from_index(action_dir).to_char()  # int between 0 (North) and 3 (West)
+                action = kr.ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
+        elif action_type < 0.5: # lauch circular
+            # Limit the number of ships to the amount that is actually present in the shipyard
+            shipyard_count = shipyard.ship_count
+            number_of_ships = min(number_of_ships, shipyard_count)
+            if number_of_ships >= 21:
+                flight_plan = ""
+                for i in range(4):
+                    flight_plan += kr.Direction.from_index((action_dir + i) % 4).to_char()
+                    if i % 2 == 0:
+                        flight_plan += str(action_lenth_y)
+                    elif not i == 3:
+                        flight_plan += str(action_lenth_x)
+                action = kr.ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
+        else: # lauch built
+            # Limit the number of ships to the amount that is actually present in the shipyard
+            shipyard_count = shipyard.ship_count
+            number_of_ships = min(number_of_ships, shipyard_count)
+            if number_of_ships >= 50:
+                flight_plan = kr.Direction.from_index(action_dir).to_char()
+                flight_plan += str(action_build_x)
+                if action_build_y < 0:
+                    flight_plan += kr.Direction.from_index((action_dir + 1) % 4).to_char()
+                    flight_plan += str(abs(action_build_y))
+                elif action_build_y > 0:
+                    flight_plan += kr.Direction.from_index((action_dir + 3) % 4).to_char()
+                    flight_plan += str(action_build_y)
+                flight_plan += "C"
+                action = kr.ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
+        shipyard.next_action = action
         return me.next_actions
 
     @property
@@ -305,8 +330,8 @@ class KoreGymEnv(gym.Env):
         gym_state = np.ndarray(shape=(self.config.size, self.config.size, N_FEATURES))
 
         # Get our player ID
-        board = self.board
-        our_id = board.current_player_id
+        board: kr.Board = self.board
+        our_id: kr.PlayerId = board.current_player_id
 
         for point, cell in board.cells.items():
             # Feature 0: How much kore
@@ -359,7 +384,7 @@ class KoreGymEnv(gym.Env):
         output_state = gym_state.flatten()
 
         # Extra Features: Progress, how much kore do I have, how much kore does opponent have
-        player = board.current_player
+        player: kr.Player = board.current_player
         opponent = board.opponents[0]
         progress = clip_normalize(board.step, low_in=0, high_in=GAME_CONFIG['episodeSteps'])
         my_kore = clip_normalize(np.log2(player.kore+1), low_in=0, high_in=np.log2(MAX_KORE_IN_RESERVE))
@@ -381,8 +406,8 @@ class KoreGymEnv(gym.Env):
         Returns:
             The agent's reward
         """
-        board = self.board
-        previous_board = self.previous_board
+        board: kr.Board = self.board
+        previous_board: kr.Board = self.previous_board
 
         if strict:
             if done:

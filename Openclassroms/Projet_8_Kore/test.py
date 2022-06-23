@@ -18,7 +18,7 @@ def agent(obs, config):
     spawn_cost = board.configuration.spawn_cost
     convert_cost = board.configuration.convert_cost
     kore_left = me.kore
-    print(me.shipyard_ids)
+    # print(me.shipyard_ids)
     for shipyard in me.shipyards:
         action = None
         if kore_left >= 500 and shipyard.ship_count >= convert_cost:
@@ -31,5 +31,5 @@ def agent(obs, config):
         elif kore_left >= spawn_cost:
             action = ShipyardAction.spawn_ships(1)
         shipyard.next_action = action
-
+    # print(me.next_actions)
     return me.next_actions
