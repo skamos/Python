@@ -18,6 +18,7 @@ from config import (
     MAX_ACTION_FLEET_SIZE,
     MAX_KORE_IN_RESERVE,
     WIN_REWARD,
+    MAX_SHIP_IN_SHIPYARD,
 )
 
 
@@ -72,7 +73,7 @@ class KoreGymEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-1,
             high=1,
-            shape=(self.config.size ** 2 * N_FEATURES + 3,),
+            shape=(self.config.size ** 2 * N_FEATURES + 4,),
             dtype=DTYPE
         )
 
@@ -132,9 +133,10 @@ class KoreGymEnv(gym.Env):
             # Debugging info
             # print(self.kore_action)
             # with open('logs/tmp.log', 'a') as log:
-            #    print(self.kore_action.action_type, self.kore_action.num_ships, self.kore_action.flight_plan, file=log)
+            # #    print(self.kore_action.action_type, self.kore_action.num_ships, self.kore_action.flight_plan, file=log)
             #    if done:
-            #        print('done', file=log)
+            #        print(done, file=log)
+            #        print(info, file=log)
             #    if info:
             #        print('info', file=log)
             self.n_steps += 1
@@ -321,6 +323,7 @@ class KoreGymEnv(gym.Env):
         # Feature 4: Progress - What turn is it?
         # Feature 5: How much kore do I have?
         # Feature 6: How much kore does the opponent have?
+        # Feature 7: How much ships does the shipyard have?
 
         We'll make sure that all features are in the range [-1, 1] and as close to a normal distribution as possible.
 
@@ -328,7 +331,6 @@ class KoreGymEnv(gym.Env):
         """
         # Init output state
         gym_state = np.ndarray(shape=(self.config.size, self.config.size, N_FEATURES))
-
         # Get our player ID
         board: kr.Board = self.board
         our_id: kr.PlayerId = board.current_player_id
@@ -384,13 +386,20 @@ class KoreGymEnv(gym.Env):
         output_state = gym_state.flatten()
 
         # Extra Features: Progress, how much kore do I have, how much kore does opponent have
+
+        if self.shipyard_id==None:
+            ship_count = 0
+        else:
+            shipyard: kr.Shipyard = board.shipyards[self.shipyard_id]
+            ship_count = shipyard.ship_count
         player: kr.Player = board.current_player
         opponent = board.opponents[0]
         progress = clip_normalize(board.step, low_in=0, high_in=GAME_CONFIG['episodeSteps'])
         my_kore = clip_normalize(np.log2(player.kore+1), low_in=0, high_in=np.log2(MAX_KORE_IN_RESERVE))
         opponent_kore = clip_normalize(np.log2(opponent.kore+1), low_in=0, high_in=np.log2(MAX_KORE_IN_RESERVE))
+        shipyard_ships = clip_normalize(ship_count, low_in=0, high_in=MAX_SHIP_IN_SHIPYARD)
 
-        return np.append(output_state, [progress, my_kore, opponent_kore])
+        return np.append(output_state, [progress, my_kore, opponent_kore, shipyard_ships])
 
     def compute_reward(self, done: bool, strict=False) -> float:
         """Compute the agent reward. Welcome to the fine art of RL.
