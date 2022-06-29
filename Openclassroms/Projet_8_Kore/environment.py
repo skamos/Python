@@ -73,7 +73,7 @@ class KoreGymEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-1,
             high=1,
-            shape=(self.config.size ** 2 * N_FEATURES + 4,),
+            shape=(self.config.size ** 2 * N_FEATURES + 5,),
             dtype=DTYPE
         )
 
@@ -278,6 +278,7 @@ class KoreGymEnv(gym.Env):
         elif action_type < 0.5: # lauch circular
             # Limit the number of ships to the amount that is actually present in the shipyard
             shipyard_count = shipyard.ship_count
+            number_of_ships = max(number_of_ships, 21)
             number_of_ships = min(number_of_ships, shipyard_count)
             if number_of_ships >= 21:
                 flight_plan = ""
@@ -285,12 +286,13 @@ class KoreGymEnv(gym.Env):
                     flight_plan += kr.Direction.from_index((action_dir + i) % 4).to_char()
                     if i % 2 == 0:
                         flight_plan += str(action_lenth_y)
-                    elif not i == 3:
+                    elif i == 1:
                         flight_plan += str(action_lenth_x)
                 action = kr.ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
         else: # lauch built
             # Limit the number of ships to the amount that is actually present in the shipyard
             shipyard_count = shipyard.ship_count
+            number_of_ships = max(number_of_ships, 50)
             number_of_ships = min(number_of_ships, shipyard_count)
             if number_of_ships >= 50:
                 flight_plan = kr.Direction.from_index(action_dir).to_char()
@@ -324,6 +326,7 @@ class KoreGymEnv(gym.Env):
         # Feature 5: How much kore do I have?
         # Feature 6: How much kore does the opponent have?
         # Feature 7: How much ships does the shipyard have?
+        # Feature 8: How much ships do you have?
 
         We'll make sure that all features are in the range [-1, 1] and as close to a normal distribution as possible.
 
@@ -383,7 +386,11 @@ class KoreGymEnv(gym.Env):
         # Feature 3 is already as normal as it gets
 
         # Flatten the input (recommended by stable_baselines3.common.env_checker.check_env)
+        player = board.current_player
+        player_fleets, player_shipyards = list(player.fleets), list(player.shipyards)
+        
         output_state = gym_state.flatten()
+        num_ships = sum(fleet.ship_count for fleet in player_fleets) + sum(shipyard.ship_count for shipyard in player_shipyards)
 
         # Extra Features: Progress, how much kore do I have, how much kore does opponent have
 
@@ -398,8 +405,9 @@ class KoreGymEnv(gym.Env):
         my_kore = clip_normalize(np.log2(player.kore+1), low_in=0, high_in=np.log2(MAX_KORE_IN_RESERVE))
         opponent_kore = clip_normalize(np.log2(opponent.kore+1), low_in=0, high_in=np.log2(MAX_KORE_IN_RESERVE))
         shipyard_ships = clip_normalize(ship_count, low_in=0, high_in=MAX_SHIP_IN_SHIPYARD)
+        num_ships = clip_normalize(num_ships, low_in=0, high_in=2000)
 
-        return np.append(output_state, [progress, my_kore, opponent_kore, shipyard_ships])
+        return np.append(output_state, [progress, my_kore, opponent_kore, shipyard_ships, num_ships])
 
     def compute_reward(self, done: bool, strict=False) -> float:
         """Compute the agent reward. Welcome to the fine art of RL.
