@@ -1,5 +1,6 @@
 from kaggle_environments.envs.kore_fleets.helpers import *
 from random import randint
+import pickle
 
 # a flight plan
 def build_flight_plan(dir_idx, size):
@@ -12,7 +13,6 @@ def build_flight_plan(dir_idx, size):
 
 def agent(obs, config):
     board = Board(obs, config)
-
     me = board.current_player
     turn = board.step
     spawn_cost = board.configuration.spawn_cost

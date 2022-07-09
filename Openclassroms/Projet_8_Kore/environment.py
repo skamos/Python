@@ -73,7 +73,7 @@ class KoreGymEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-1,
             high=1,
-            shape=(self.config.size ** 2 * N_FEATURES + 5,),
+            shape=(self.config.size ** 2 * N_FEATURES + 7,),
             dtype=DTYPE
         )
 
@@ -193,61 +193,31 @@ class KoreGymEnv(gym.Env):
             The corresponding kore environment actions or None if the agent wants to wait.
 
         """
-        action_type = gym_action[0]
-        number_of_ships = int(
+        action_type = np.array([gym_action[0], gym_action[1], gym_action[2], gym_action[3]])
+        number_of_ships = round(
             clip_normalize(
-                x=gym_action[1],
+                x=gym_action[4],
                 low_in=-1,
                 high_in=1,
                 low_out=1,
                 high_out=MAX_ACTION_FLEET_SIZE
-            )
+            )  # type: ignore
         )
-        action_dir = int(
+        action_dir = np.array([round(
             clip_normalize(
-                x=gym_action[2],
+                x=gym_action[5],
                 low_in=-1,
                 high_in=1,
-                low_out=0,
-                high_out=3
-            )
-        )
-        action_lenth_x = int(
-            clip_normalize(
-                x=gym_action[3],
-                low_in=-1,
-                high_in=1,
-                low_out=1,
+                low_out=-9,
                 high_out=9
-            )
-        )
-        action_lenth_y = int(
+            )), round(  # type: ignore
             clip_normalize(
-                x=gym_action[4],
+                x=gym_action[6],
                 low_in=-1,
                 high_in=1,
-                low_out=1,
+                low_out=-9,
                 high_out=9
-            )
-        )
-        action_build_x = int(
-            clip_normalize(
-                x=gym_action[4],
-                low_in=-1,
-                high_in=1,
-                low_out=1,
-                high_out=11
-            )
-        )
-        action_build_y = int(
-            clip_normalize(
-                x=gym_action[4],
-                low_in=-1,
-                high_in=1,
-                low_out=-11,
-                high_out=11
-            )
-        )
+            ))])  # type: ignore
         # Mapping the number of ships is an interesting exercise. Here we chose a linear mapping to the interval
         # [1, MAX_ACTION_FLEET_SIZE], but you could use something else. With a linear mapping, all values are
         # evenly spaced. An exponential mapping, however, would space out lower values, making them easier for the agent
@@ -261,33 +231,44 @@ class KoreGymEnv(gym.Env):
         if self.shipyard_id == None:
             return {}
         shipyard: kr.Shipyard = board.shipyards[self.shipyard_id]  # type: ignore
-        if action_type < -0.5: # build ships
+        if action_type.argmax() == 0: # craft ships
             # Limit the number of ships to the maximum that can be actually built
             max_spawn = shipyard.max_spawn
             max_purchasable = floor(me.kore / self.config["spawnCost"])
-            number_of_ships = min(number_of_ships, max_spawn, max_purchasable)
+            number_of_ships = min(max_spawn, max_purchasable)
             if number_of_ships:
                 action = kr.ShipyardAction.spawn_ships(number_ships=number_of_ships)
-        elif action_type < 0: # lauch linear
+        elif action_type.argmax() == 1: # lauch linear
             # Limit the number of ships to the amount that is actually present in the shipyard
             shipyard_count = shipyard.ship_count
+            number_of_ships = max(number_of_ships, 3)
             number_of_ships = min(number_of_ships, shipyard_count)
-            if number_of_ships:
-                flight_plan = kr.Direction.from_index(action_dir).to_char()  # int between 0 (North) and 3 (West)
+            if number_of_ships >= 2:
+                direction, _ = self.direction(action_dir=action_dir)
+                flight_plan = kr.Direction.from_index(direction).to_char()  # int between 0 (North) and 3 (West)
                 action = kr.ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
-        elif action_type < 0.5: # lauch circular
+        elif action_type.argmax() == 2: # lauch circular
             # Limit the number of ships to the amount that is actually present in the shipyard
             shipyard_count = shipyard.ship_count
             number_of_ships = max(number_of_ships, 21)
             number_of_ships = min(number_of_ships, shipyard_count)
             if number_of_ships >= 21:
                 flight_plan = ""
-                for i in range(4):
-                    flight_plan += kr.Direction.from_index((action_dir + i) % 4).to_char()
-                    if i % 2 == 0:
-                        flight_plan += str(action_lenth_y)
-                    elif i == 1:
-                        flight_plan += str(action_lenth_x)
+                direction, length = self.direction(action_dir=action_dir, first=True)
+                flight_plan += kr.Direction.from_index(direction).to_char()
+                if length > 0:
+                    flight_plan += str(length)
+                direction, length = self.direction(action_dir=action_dir, first=False)
+                if length > 0:
+                    flight_plan += kr.Direction.from_index(direction).to_char()
+                    flight_plan += str(length)
+                direction, length = self.direction(action_dir=action_dir, first=True)
+                if length > 0:
+                    flight_plan += kr.Direction.from_index((direction + 2) % 4).to_char()
+                    flight_plan += str(length)
+                direction, length = self.direction(action_dir=action_dir, first=False)
+                if length > 0:
+                    flight_plan += kr.Direction.from_index((direction + 2) % 4).to_char()
                 action = kr.ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
         else: # lauch built
             # Limit the number of ships to the amount that is actually present in the shipyard
@@ -295,19 +276,36 @@ class KoreGymEnv(gym.Env):
             number_of_ships = max(number_of_ships, 50)
             number_of_ships = min(number_of_ships, shipyard_count)
             if number_of_ships >= 50:
-                flight_plan = kr.Direction.from_index(action_dir).to_char()
-                flight_plan += str(action_build_x)
-                if action_build_y < 0:
-                    flight_plan += kr.Direction.from_index((action_dir + 1) % 4).to_char()
-                    flight_plan += str(abs(action_build_y))
-                elif action_build_y > 0:
-                    flight_plan += kr.Direction.from_index((action_dir + 3) % 4).to_char()
-                    flight_plan += str(action_build_y)
+                flight_plan = ""
+                direction, length = self.direction(action_dir=action_dir, first=True)
+                flight_plan += kr.Direction.from_index(direction).to_char()
+                if length > 0:
+                    flight_plan += str(length)
+                direction, length = self.direction(action_dir=action_dir, first=False)
+                if length > 0:
+                    flight_plan += kr.Direction.from_index(direction).to_char()
+                    flight_plan += str(length)
                 flight_plan += "C"
                 action = kr.ShipyardAction.launch_fleet_with_flight_plan(number_of_ships, flight_plan)
         shipyard.next_action = action
         return me.next_actions
-
+    
+    def direction(self, action_dir: np.ndarray, first: bool = True) -> tuple:
+        if first:
+            axe = abs(action_dir).argmax()
+        else:
+            axe = (abs(action_dir).argmax() + 1) % 2
+        sens = action_dir[axe] > 0
+        if not axe and sens:
+            direction = 0
+        elif axe and sens:
+            direction = 1
+        elif not axe and not sens:
+            direction = 2
+        else:
+            direction = 3
+        return direction, abs(action_dir[axe])
+        
     @property
     def obs_as_gym_state(self) -> np.ndarray:
         """Return the current observation encoded as a state in state space.
@@ -327,6 +325,8 @@ class KoreGymEnv(gym.Env):
         # Feature 6: How much kore does the opponent have?
         # Feature 7: How much ships does the shipyard have?
         # Feature 8: How much ships do you have?
+        # Feature 9: X coordonate of shipyard
+        # Feature 10: Y coordonate of shipyard
 
         We'll make sure that all features are in the range [-1, 1] and as close to a normal distribution as possible.
 
@@ -354,7 +354,7 @@ class KoreGymEnv(gym.Env):
                 gym_state[point.y, point.x, 1] = gym_state[point.y, point.x, 2] = 0
 
             # Feature 3: Shipyard present (1: friendly, -1: enemy)
-            shipyard = cell.shipyard
+            shipyard = cell.shipyard  # type: ignore
             if shipyard:
                 gym_state[point.y, point.x, 3] = 1 if shipyard.player_id == our_id else -1
             else:
@@ -396,9 +396,13 @@ class KoreGymEnv(gym.Env):
 
         if self.shipyard_id==None:
             ship_count = 0
+            shipyard_x = 0
+            shipyard_y = 0
         else:
             shipyard: kr.Shipyard = board.shipyards[self.shipyard_id]
             ship_count = shipyard.ship_count
+            shipyard_x = shipyard.position[0]
+            shipyard_y = shipyard.position[1]
         player: kr.Player = board.current_player
         opponent = board.opponents[0]
         progress = clip_normalize(board.step, low_in=0, high_in=GAME_CONFIG['episodeSteps'])
@@ -406,8 +410,10 @@ class KoreGymEnv(gym.Env):
         opponent_kore = clip_normalize(np.log2(opponent.kore+1), low_in=0, high_in=np.log2(MAX_KORE_IN_RESERVE))
         shipyard_ships = clip_normalize(ship_count, low_in=0, high_in=MAX_SHIP_IN_SHIPYARD)
         num_ships = clip_normalize(num_ships, low_in=0, high_in=2000)
+        shipyard_x = clip_normalize(shipyard_x, low_in=0, high_in=21)
+        shipyard_y = clip_normalize(shipyard_y, low_in=0, high_in=21)
 
-        return np.append(output_state, [progress, my_kore, opponent_kore, shipyard_ships, num_ships])
+        return np.append(output_state, [progress, my_kore, opponent_kore, shipyard_ships, num_ships, shipyard_x, shipyard_y])  # type: ignore
 
     def compute_reward(self, done: bool, strict=False) -> float:
         """Compute the agent reward. Welcome to the fine art of RL.

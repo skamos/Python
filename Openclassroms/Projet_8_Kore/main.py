@@ -8,11 +8,11 @@ KAGGLE_AGENT_PATH = "/kaggle_simulations/agent/"
 if os.path.exists(KAGGLE_AGENT_PATH):
     # We're in the kaggle target system
     sys.path.insert(0, os.path.join(KAGGLE_AGENT_PATH, 'lib'))
-    agent_path = os.path.join(KAGGLE_AGENT_PATH, 'baseline_agent')
+    agent_path = os.path.join(KAGGLE_AGENT_PATH, 'main_agent')
 else:
     # We're somewhere else
     sys.path.insert(0, os.path.join(os.getcwd(), 'lib'))
-    agent_path = 'baseline_agent'
+    agent_path = 'main_agent'
 
 # Now for the actual agent
 from stable_baselines3 import PPO
